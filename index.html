@@ -400,6 +400,23 @@
   .empty, .loading { color: var(--hint); }
   .lightbox, .lb-close { color: #fff; }
   .lb-counter { background: rgba(255, 46, 147, 0.45); color: #fff; }
+
+  /* ===== Админ: категории ===== */
+  .pill-admin { background: transparent; border: 1.5px dashed var(--accent-soft); color: var(--accent); box-shadow: none; }
+  .cat-hint { margin: 0 15px 16px; font-size: 13px; line-height: 1.45; color: var(--hint); text-align: center; }
+  .cat-row { display: flex; align-items: center; gap: 6px; margin: 0 15px 10px; }
+  .cat-row .input { flex: 1; min-width: 0; }
+  .cat-count { font-size: 11px; color: var(--hint); min-width: 22px; text-align: center; }
+  .cat-btn {
+    flex: 0 0 auto; width: 38px; height: 46px; border-radius: 12px;
+    background: #fff; border: 1px solid var(--card-line); color: var(--accent); font-size: 15px;
+  }
+  .cat-btn:disabled { opacity: .3; }
+  .cat-add {
+    display: block; width: calc(100% - 30px); height: 46px; margin: 6px 15px 14px;
+    border-radius: 12px; border: 1.5px dashed var(--accent-soft);
+    color: var(--accent); font-size: 15px; font-weight: 600;
+  }
 </style>
 </head>
 <body>
@@ -502,6 +519,19 @@
   <div class="buy-bar"><button class="buy-btn" id="edSave">Сохранить</button></div>
 </div>
 
+<!-- Админ: категории -->
+<div id="catEditor" class="editor">
+  <button class="web-back" id="catBack" aria-label="Назад">‹</button>
+  <div class="scroll-container" id="catScroll">
+    <div class="ed-title">Категории</div>
+    <div class="cat-hint">«Все» показывается всегда. Стрелками меняется порядок пилюль. Если переименовать категорию, товары в ней останутся.</div>
+    <div id="catList"></div>
+    <button class="cat-add" id="catAdd">+ Добавить категорию</button>
+    <div class="ed-error" id="catError"></div>
+  </div>
+  <div class="buy-bar"><button class="buy-btn" id="catSave">Сохранить</button></div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -515,9 +545,9 @@ const APP_TITLE = 'candy glam shop💗';   // название в шапке
 const API_URL = 'https://script.google.com/macros/s/AKfycbwUy_39N46GTi01dZco8QTNnSjKsNfbnnPrHCNHbzvJ116sRlz-3XgcPZ6goIWLQEQ/exec'; // ссылка на веб-приложение Apps Script (…/exec)
 const ADMIN_IDS = [7780439131]; // ваши Telegram ID, например [123456789]
 
-// Пилюли категорий: key — значение в колонке category таблицы
-const CATEGORIES = [
-  { key: 'all',         title: 'Все' },
+// Категории по умолчанию — пока не загрузился лист categories из таблицы
+// (там их меняет админ). key — значение в колонке category; «Все» добавляется само
+const DEFAULT_CATEGORIES = [
   { key: 'bags',        title: 'Сумки' },
   { key: 'order',       title: 'Под заказ' },
   { key: 'accessories', title: 'Аксессуары' },
@@ -581,12 +611,35 @@ document.title = APP_TITLE;
 $('appTitle').textContent = APP_TITLE;
 if (LOGO_URL) document.querySelectorAll('.logo').forEach(img => { img.src = LOGO_URL; img.hidden = false; });
 
-$('filters').insertAdjacentHTML('beforeend', CATEGORIES.map(c =>
-  `<button class="pill${c.key === currentCat ? ' active' : ''}" data-cat="${esc(c.key)}">${esc(c.title)}</button>`
-).join(''));
+// ---------- категории ----------
+let categories = DEFAULT_CATEGORIES;
+try {
+  const cached = JSON.parse(localStorage.getItem('categories'));
+  if (Array.isArray(cached) && cached.length) categories = cached;
+} catch {}
+
+function renderPills() {
+  const list = [{ key: 'all', title: 'Все' }, ...categories];
+  if (!list.some(c => c.key === currentCat)) currentCat = 'all';
+  $('filters').querySelectorAll('.pill').forEach(p => p.remove());
+  $('filters').insertAdjacentHTML('beforeend', list.map(c =>
+    `<button class="pill${c.key === currentCat ? ' active' : ''}" data-cat="${esc(c.key)}">${esc(c.title)}</button>`
+  ).join('') + (isAdmin ? '<button class="pill pill-admin" id="catEditBtn">⚙︎ Категории</button>' : ''));
+}
+
+function setCategories(list) {
+  if (!Array.isArray(list) || !list.length) return;
+  categories = list;
+  try { localStorage.setItem('categories', JSON.stringify(list)); } catch {}
+  renderPills();
+  renderHome();
+}
+
+renderPills();
 $('filters').addEventListener('click', e => {
   const pill = e.target.closest('.pill');
   if (!pill) return;
+  if (pill.id === 'catEditBtn') { openCatEditor(); return; }
   currentCat = pill.dataset.cat;
   document.querySelectorAll('.pill').forEach(p => p.classList.toggle('active', p === pill));
   renderHome();
@@ -622,9 +675,15 @@ function load() {
   if (isAdmin) {
     fetch(API_URL)
       .then(r => r.json())
-      .then(d => { if (!d.ok) throw new Error(d.error); setProducts(normalize(d.rows)); })
+      .then(d => { if (!d.ok) throw new Error(d.error); setCategories(d.categories); setProducts(normalize(d.rows)); })
       .catch(loadCsv);
     return;
+  }
+  if (API_URL) {
+    fetch(API_URL + '?part=categories')
+      .then(r => r.json())
+      .then(d => { if (d.ok) setCategories(d.categories); })
+      .catch(() => {}); // нет связи со скриптом — остаются категории из кэша или по умолчанию
   }
   loadCsv();
 }
@@ -810,6 +869,7 @@ $('lbClose').addEventListener('click', closeLightbox);
 
 function onBack() {
   if ($('lightbox').classList.contains('open')) closeLightbox();
+  else if ($('catEditor').classList.contains('open')) closeCatEditor();
   else if ($('editor').classList.contains('open')) closeEditor();
   else if ($('modal').classList.contains('open')) closeProduct();
 }
@@ -870,7 +930,7 @@ function openEditor(p) {
   $('edPrice').value = p && p.price != null ? p.price : '';
   $('edPrice2').value = p && p.price2 != null ? p.price2 : '';
   $('edDesc').value = p ? p.description : '';
-  const cats = CATEGORIES.filter(c => c.key !== 'all');
+  const cats = categories.slice();
   const cat = p ? p.category : (currentCat !== 'all' ? currentCat : cats[0].key);
   if (cat && !cats.some(c => c.key === cat)) cats.push({ key: cat, title: cat });
   $('edCat').innerHTML = cats.map(c => `<option value="${esc(c.key)}">${esc(c.title)}</option>`).join('');
@@ -983,6 +1043,100 @@ $('admDelete').addEventListener('click', async () => {
     try { tg.showAlert(err.message) } catch { alert(err.message) }
   }
 });
+
+// ---------- админ: категории ----------
+let catDraft = [];
+
+const TRANSLIT = { а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ё: 'e', ж: 'zh', з: 'z', и: 'i', й: 'y', к: 'k', л: 'l', м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'h', ц: 'c', ч: 'ch', ш: 'sh', щ: 'sch', ъ: '', ы: 'y', ь: '', э: 'e', ю: 'yu', я: 'ya' };
+// ключ для новой категории: «Костюмы» → kostyumy (потом не меняется, даже при переименовании)
+function makeKey(title, taken) {
+  const base = title.toLowerCase().split('').map(ch => TRANSLIT[ch] ?? ch).join('')
+    .replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '') || 'cat';
+  let key = base, n = 2;
+  while (key === 'all' || taken.includes(key)) key = `${base}-${n++}`;
+  return key;
+}
+
+const countIn = key => key ? products.filter(p => p.category === key).length : 0;
+
+function renderCatList() {
+  $('catList').innerHTML = catDraft.map((c, i) => `
+    <div class="cat-row" data-i="${i}">
+      <input class="input" value="${esc(c.title)}" placeholder="Название" maxlength="40">
+      <span class="cat-count" title="Товаров">${countIn(c.key) || ''}</span>
+      <button class="cat-btn" data-act="up" aria-label="Выше" ${i === 0 ? 'disabled' : ''}>↑</button>
+      <button class="cat-btn" data-act="down" aria-label="Ниже" ${i === catDraft.length - 1 ? 'disabled' : ''}>↓</button>
+      <button class="cat-btn" data-act="del" aria-label="Удалить">✕</button>
+    </div>`).join('');
+}
+
+function openCatEditor() {
+  catDraft = categories.map(c => ({ ...c }));
+  $('catError').textContent = '';
+  renderCatList();
+  $('catScroll').scrollTop = 0;
+  $('catEditor').classList.add('open');
+  try { tg.BackButton.show() } catch {}
+}
+
+function closeCatEditor() {
+  $('catEditor').classList.remove('open');
+  document.activeElement && document.activeElement.blur();
+  if (!$('modal').classList.contains('open')) { try { tg.BackButton.hide() } catch {} }
+}
+
+$('catList').addEventListener('input', e => {
+  const row = e.target.closest('.cat-row');
+  if (row) catDraft[Number(row.dataset.i)].title = e.target.value;
+});
+
+$('catList').addEventListener('click', async e => {
+  const btn = e.target.closest('[data-act]');
+  if (!btn) return;
+  const i = Number(btn.closest('.cat-row').dataset.i);
+  if (btn.dataset.act === 'up') [catDraft[i - 1], catDraft[i]] = [catDraft[i], catDraft[i - 1]];
+  if (btn.dataset.act === 'down') [catDraft[i + 1], catDraft[i]] = [catDraft[i], catDraft[i + 1]];
+  if (btn.dataset.act === 'del') {
+    const c = catDraft[i], n = countIn(c.key);
+    if (n && !(await askConfirm(`В категории «${c.title}» ${n} товар(ов). Они останутся в каталоге, но без категории. Удалить?`))) return;
+    catDraft.splice(i, 1);
+  }
+  renderCatList();
+});
+
+$('catAdd').addEventListener('click', () => {
+  catDraft.push({ key: '', title: '' });
+  renderCatList();
+  const inputs = $('catList').querySelectorAll('.input');
+  inputs[inputs.length - 1].focus();
+});
+
+$('catSave').addEventListener('click', async () => {
+  const list = catDraft.map(c => ({ key: c.key, title: c.title.trim() }));
+  if (!list.length) { $('catError').textContent = 'Нужна хотя бы одна категория'; return; }
+  if (list.some(c => !c.title)) { $('catError').textContent = 'Заполните названия или удалите пустые строки'; return; }
+  const taken = list.map(c => c.key).filter(Boolean);
+  list.forEach(c => { if (!c.key) { c.key = makeKey(c.title, taken); taken.push(c.key); } });
+
+  const btn = $('catSave');
+  btn.disabled = true;
+  btn.textContent = 'Сохранение…';
+  $('catError').textContent = '';
+  try {
+    const { categories: saved } = await api('saveCategories', { categories: list });
+    setCategories(saved);
+    closeCatEditor();
+    try { tg.HapticFeedback.notificationOccurred('success') } catch {}
+    toast('Категории сохранены');
+  } catch (err) {
+    $('catError').textContent = err.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Сохранить';
+  }
+});
+
+$('catBack').addEventListener('click', onBack);
 
 // ---------- демо-данные (пока SHEET_URL не заполнен) ----------
 const pic = (s, n) => Array.from({ length: n }, (_, i) => `https://picsum.photos/seed/${s}${i}/600/600`).join(', ');
