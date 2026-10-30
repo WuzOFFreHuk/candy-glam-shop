@@ -417,6 +417,50 @@
     border-radius: 12px; border: 1.5px dashed var(--accent-soft);
     color: var(--accent); font-size: 15px; font-weight: 600;
   }
+
+  /* ===== Размеры ===== */
+  .sizes-block { margin-top: 16px; }
+  .sizes-block[hidden] { display: none; }
+  .sizes-label { font-size: 13px; color: var(--hint); margin-bottom: 8px; }
+  .size-chips { display: flex; flex-wrap: wrap; gap: 8px; }
+  .size-chip {
+    min-width: 46px; height: 38px; padding: 0 14px; border-radius: 19px;
+    background: #fff; border: 1px solid var(--card-line); box-shadow: var(--soft-shadow);
+    color: var(--text); font-size: 14px; font-weight: 600;
+    transition: background .15s, color .15s;
+  }
+  .size-chip.on { background: var(--grad); border-color: transparent; color: #fff; box-shadow: var(--glow); }
+  .size-chip:disabled { opacity: .45; }
+  .size-add { display: flex; gap: 8px; margin-top: 10px; }
+  .size-add .input { flex: 1; min-width: 0; }
+  .ed-rate { margin: -6px 15px 14px; font-size: 12px; line-height: 1.4; color: var(--hint); }
+  .ed-rate:empty { display: none; }
+
+  /* ===== Продано ===== */
+  .admin-row { flex-wrap: wrap; }
+  .admin-btn.sold-btn { flex-basis: 100%; }
+  .badge-sold {
+    position: absolute; top: 8px; left: 8px; z-index: 2;
+    background: var(--text); color: #fff;
+    font-size: 10px; font-weight: 800; letter-spacing: .6px;
+    padding: 4px 8px; border-radius: 10px;
+  }
+  .card.sold .slider img, .gallery.sold .track img { filter: grayscale(0.85); opacity: .7; }
+  .card.sold .price-row, .card.sold .name { opacity: .5; }
+  .switch-row {
+    display: flex; align-items: center; justify-content: space-between;
+    margin: 0 15px 14px; padding: 12px 14px; border-radius: 12px;
+    background: #fff; border: 1px solid var(--card-line);
+    font-size: 15px; font-weight: 600; color: var(--text);
+  }
+  .switch-row input { display: none; }
+  .switch { position: relative; width: 46px; height: 28px; border-radius: 14px; background: #f2c9dc; transition: background .2s; }
+  .switch::after {
+    content: ''; position: absolute; top: 3px; left: 3px; width: 22px; height: 22px; border-radius: 50%;
+    background: #fff; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2); transition: transform .2s;
+  }
+  .switch-row input:checked + .switch { background: var(--accent); }
+  .switch-row input:checked + .switch::after { transform: translateX(18px); }
 </style>
 </head>
 <body>
@@ -464,9 +508,14 @@
     <div class="info">
       <div class="m-price-row"><span class="m-price" id="mPrice"></span><span class="m-price2" id="mPrice2"></span></div>
       <div class="m-name" id="mName"></div>
+      <div class="sizes-block" id="mSizesBlock">
+        <div class="sizes-label">Размер</div>
+        <div class="size-chips" id="mSizes"></div>
+      </div>
       <div class="admin-row">
         <button class="admin-btn" id="admEdit">✏️ Изменить</button>
         <button class="admin-btn danger" id="admDelete">🗑 Удалить</button>
+        <button class="admin-btn sold-btn" id="admSold"></button>
       </div>
       <div class="divider"></div>
       <div class="m-desc" id="mDesc"></div>
@@ -513,7 +562,17 @@
       <div class="field"><label for="edPrice">Цена, ₽</label><input class="input" id="edPrice" inputmode="numeric" autocomplete="off"></div>
       <div class="field"><label for="edPrice2">Цена, BYN</label><input class="input" id="edPrice2" inputmode="decimal" autocomplete="off"></div>
     </div>
+    <div class="ed-rate" id="edRate"></div>
+    <div class="field">
+      <label>Размеры (можно выбрать несколько)</label>
+      <div class="size-chips" id="edSizes"></div>
+      <div class="size-add">
+        <input class="input" id="edSizeInput" placeholder="Свой размер, например 42" autocomplete="off">
+        <button class="cat-btn" id="edSizeAdd" aria-label="Добавить размер">+</button>
+      </div>
+    </div>
     <div class="field"><label for="edDesc">Описание</label><textarea class="input" id="edDesc"></textarea></div>
+    <label class="switch-row"><span>Продано</span><input type="checkbox" id="edSold"><span class="switch"></span></label>
     <div class="ed-error" id="edError"></div>
   </div>
   <div class="buy-bar"><button class="buy-btn" id="edSave">Сохранить</button></div>
@@ -577,6 +636,7 @@ const $ = id => document.getElementById(id);
 const HEART_SVG = '<svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z"/></svg>';
 
 let products = [];
+let bynRate = null; // BYN за 1 ₽ по курсу НБРБ, приходит из скрипта (только админу)
 let byId = {};
 let currentCat = 'all';
 let currentSort = 'new';
@@ -659,6 +719,8 @@ function normalize(rows) {
       price2: num(r.price2),
       images: String(r.images ?? '').split(/[,\n]/).map(s => s.trim()).filter(s => /^https?:\/\//i.test(s)),
       description: String(r.description ?? '').trim(),
+      sizes: String(r.sizes ?? '').split(',').map(s => s.trim()).filter(Boolean),
+      sold: /^(1|\+|да|yes|true|sold|продано)$/i.test(String(r.sold ?? '').trim()),
     };
   }).filter(Boolean);
 }
@@ -675,7 +737,12 @@ function load() {
   if (isAdmin) {
     fetch(API_URL)
       .then(r => r.json())
-      .then(d => { if (!d.ok) throw new Error(d.error); setCategories(d.categories); setProducts(normalize(d.rows)); })
+      .then(d => {
+        if (!d.ok) throw new Error(d.error);
+        bynRate = d.rate || null;
+        setCategories(d.categories);
+        setProducts(normalize(d.rows));
+      })
       .catch(loadCsv);
     return;
   }
@@ -712,10 +779,10 @@ function cardHTML(p, isNew, multi) {
     ? `<div class="dots">${imgs.map((_, i) => `<span class="dot${i ? '' : ' on'}"></span>`).join('')}</div>`
     : '';
   return `
-    <div class="card" data-id="${esc(p.id)}">
+    <div class="card${p.sold ? ' sold' : ''}" data-id="${esc(p.id)}">
       <div class="photo">
         <div class="slider">${slides}</div>
-        ${isNew ? '<span class="badge">✦ NEW</span>' : ''}
+        ${p.sold ? '<span class="badge-sold">ПРОДАНО</span>' : isNew ? '<span class="badge">✦ NEW</span>' : ''}
         ${heartBtn(p.id)}
       </div>
       ${dots}
@@ -739,6 +806,7 @@ function renderHome() {
   if (currentSort === 'new') list.sort(compareId);
   if (currentSort === 'cheap') list.sort((a, b) => (a.price ?? Infinity) - (b.price ?? Infinity));
   if (currentSort === 'expensive') list.sort((a, b) => (b.price ?? -Infinity) - (a.price ?? -Infinity));
+  list = [...list.filter(p => !p.sold), ...list.filter(p => p.sold)]; // проданное — в конец
   $('homeGrid').innerHTML = list.length
     ? list.map((p, i) => cardHTML(p, currentSort === 'new' && i < 3, true)).join('')
     : '<div class="empty">Нет товаров</div>';
@@ -835,6 +903,12 @@ function openProduct(id) {
   $('mPrice2').textContent = byn(p.price2);
   $('mName').textContent = p.name;
   $('mDesc').textContent = p.description;
+  selectedSize = p.sizes.length === 1 ? p.sizes[0] : null;
+  renderProductSizes();
+  $('mGallery').classList.toggle('sold', p.sold);
+  $('buyBtn').disabled = p.sold;
+  $('buyBtn').textContent = p.sold ? 'Продано' : '💌 Написать продавцу';
+  $('admSold').textContent = p.sold ? '↩︎ Вернуть в продажу' : '✓ Отметить «Продано»';
   mSwipe.go(0, false);
   $('modalScroll').scrollTop = 0;
   $('modal').classList.add('open');
@@ -846,11 +920,35 @@ function closeProduct() {
   try { tg.BackButton.hide() } catch {}
 }
 
+let selectedSize = null;
+
+function renderProductSizes() {
+  const sizes = current.sizes;
+  $('mSizesBlock').hidden = !sizes.length;
+  $('mSizes').innerHTML = sizes.map(s =>
+    `<button class="size-chip${s === selectedSize ? ' on' : ''}" data-size="${esc(s)}" ${current.sold ? 'disabled' : ''}>${esc(s)}</button>`
+  ).join('');
+}
+
+$('mSizes').addEventListener('click', e => {
+  const chip = e.target.closest('.size-chip');
+  if (!chip) return;
+  selectedSize = chip.dataset.size;
+  renderProductSizes();
+  try { tg.HapticFeedback.selectionChanged() } catch {}
+});
+
 $('buyBtn').addEventListener('click', () => {
-  if (!current) return;
-  const photo = current.images[0];
-  const text = `Привет! Хочу купить ${current.name}` + (photo ? ` (${photo})` : '');
-  const url = `https://t.me/${SELLER_NICK}?text=${encodeURIComponent(text)}`;
+  if (!current || current.sold) return;
+  if (current.sizes.length > 1 && !selectedSize) {
+    try { tg.showAlert('Выберите размер 💗') } catch { toast('Выберите размер') }
+    return;
+  }
+  const lines = [`Привет! 💗 Хочу купить: ${current.name}`];
+  if (selectedSize) lines.push(`Размер: ${selectedSize}`);
+  if (current.price != null) lines.push(`Цена: ${rub(current.price)}` + (current.price2 != null ? ` / ${byn(current.price2)}` : ''));
+  lines.push(`Артикул: ${current.id}`);
+  const url = `https://t.me/${SELLER_NICK}?text=${encodeURIComponent(lines.join('\n'))}`;
   if (inTelegram) { try { tg.openTelegramLink(url); return; } catch {} }
   window.open(url, '_blank');
 });
@@ -923,13 +1021,28 @@ async function resizeToBase64(file, max = 1600, quality = 0.85) {
 let edit = null;               // { id, photos: [{ url } | { tmp }] }
 let uploadQueue = Promise.resolve();
 
+const SIZE_PRESETS = ['XS', 'S', 'M', 'L', 'XL', 'XXL', 'One size'];
+const toByn = rubles => Math.ceil(rubles * bynRate); // округляем вверх до целого BYN
+
 function openEditor(p) {
-  edit = { id: p ? p.id : '', photos: p ? p.images.map(url => ({ url })) : [] };
+  edit = {
+    id: p ? p.id : '',
+    photos: p ? p.images.map(url => ({ url })) : [],
+    sizes: p ? p.sizes.slice() : [],
+    // BYN пересчитывается сам, пока его не вписали вручную
+    autoByn: !p || p.price2 == null || (bynRate && p.price != null && p.price2 === toByn(p.price)),
+  };
   $('edTitle').textContent = p ? 'Редактирование' : 'Новый товар';
   $('edName').value = p ? p.name : '';
   $('edPrice').value = p && p.price != null ? p.price : '';
   $('edPrice2').value = p && p.price2 != null ? p.price2 : '';
   $('edDesc').value = p ? p.description : '';
+  $('edSold').checked = !!(p && p.sold);
+  $('edSizeInput').value = '';
+  $('edRate').textContent = bynRate
+    ? `Курс НБРБ: 100 ₽ = ${(bynRate * 100).toFixed(2).replace('.', ',')} BYN. BYN считается сам при вводе цены в ₽ (округляется вверх), можно поправить вручную.`
+    : 'Курс НБРБ не загрузился — впишите цену в BYN вручную.';
+  renderEdSizes();
   const cats = categories.slice();
   const cat = p ? p.category : (currentCat !== 'all' ? currentCat : cats[0].key);
   if (cat && !cats.some(c => c.key === cat)) cats.push({ key: cat, title: cat });
@@ -992,6 +1105,56 @@ $('edFile').addEventListener('change', e => {
   renderPhotos();
 });
 
+// ---------- размеры в редакторе ----------
+function renderEdSizes() {
+  const all = [...SIZE_PRESETS, ...edit.sizes.filter(s => !SIZE_PRESETS.includes(s))];
+  $('edSizes').innerHTML = all.map(s =>
+    `<button class="size-chip${edit.sizes.includes(s) ? ' on' : ''}" data-size="${esc(s)}">${esc(s)}</button>`
+  ).join('');
+}
+
+$('edSizes').addEventListener('click', e => {
+  const chip = e.target.closest('.size-chip');
+  if (!chip) return;
+  const s = chip.dataset.size;
+  edit.sizes = edit.sizes.includes(s) ? edit.sizes.filter(x => x !== s) : [...edit.sizes, s];
+  renderEdSizes();
+});
+
+function addCustomSize() {
+  let s = $('edSizeInput').value.trim().replace(/,/g, ' ');
+  if (!s) return;
+  s = SIZE_PRESETS.find(p => p.toLowerCase() === s.toLowerCase()) || s; // «m» → «M»
+  if (!edit.sizes.includes(s)) edit.sizes.push(s);
+  $('edSizeInput').value = '';
+  renderEdSizes();
+}
+$('edSizeAdd').addEventListener('click', addCustomSize);
+$('edSizeInput').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addCustomSize(); } });
+
+// ---------- ₽ → BYN ----------
+$('edPrice').addEventListener('input', () => {
+  if (!edit.autoByn || !bynRate) return;
+  const rubles = num($('edPrice').value);
+  $('edPrice2').value = rubles ? toByn(rubles) : '';
+});
+$('edPrice2').addEventListener('input', () => { edit.autoByn = !$('edPrice2').value.trim(); });
+
+// ---------- сохранение ----------
+async function saveProduct(payload) {
+  const { product } = await api('save', { product: payload });
+  const saved = normalize([product])[0];
+  const idx = products.findIndex(p => p.id === saved.id);
+  if (idx >= 0) products[idx] = saved; else products.push(saved);
+  setProducts(products);
+  return saved;
+}
+
+const payloadOf = p => ({
+  id: p.id, name: p.name, category: p.category, price: p.price ?? '', price2: p.price2 ?? '',
+  images: p.images.join(', '), description: p.description, sizes: p.sizes.join(', '), sold: p.sold,
+});
+
 $('edSave').addEventListener('click', async () => {
   const name = $('edName').value.trim();
   if (!name) { $('edError').textContent = 'Укажите название'; return; }
@@ -1000,8 +1163,9 @@ $('edSave').addEventListener('click', async () => {
   btn.disabled = true;
   btn.textContent = 'Сохранение…';
   $('edError').textContent = '';
+  const sizes = [...SIZE_PRESETS.filter(s => edit.sizes.includes(s)), ...edit.sizes.filter(s => !SIZE_PRESETS.includes(s))];
   try {
-    const { product } = await api('save', { product: {
+    const saved = await saveProduct({
       id: edit.id,
       name,
       category: $('edCat').value,
@@ -1009,11 +1173,9 @@ $('edSave').addEventListener('click', async () => {
       price2: $('edPrice2').value,
       images: edit.photos.map(ph => ph.url).join(', '),
       description: $('edDesc').value,
-    } });
-    const saved = normalize([product])[0];
-    const idx = products.findIndex(p => p.id === saved.id);
-    if (idx >= 0) products[idx] = saved; else products.push(saved);
-    setProducts(products);
+      sizes: sizes.join(', '),
+      sold: $('edSold').checked,
+    });
     closeEditor();
     if ($('modal').classList.contains('open')) openProduct(saved.id);
     try { tg.HapticFeedback.notificationOccurred('success') } catch {}
@@ -1029,6 +1191,21 @@ $('edSave').addEventListener('click', async () => {
 $('fab').addEventListener('click', () => openEditor(null));
 $('edBack').addEventListener('click', onBack);
 $('admEdit').addEventListener('click', () => current && openEditor(current));
+$('admSold').addEventListener('click', async () => {
+  if (!current) return;
+  const btn = $('admSold');
+  btn.disabled = true;
+  try {
+    const saved = await saveProduct({ ...payloadOf(current), sold: !current.sold });
+    openProduct(saved.id);
+    try { tg.HapticFeedback.notificationOccurred('success') } catch {}
+    toast(saved.sold ? 'Отмечено «Продано»' : 'Снова в продаже');
+  } catch (err) {
+    try { tg.showAlert(err.message) } catch { alert(err.message) }
+  } finally {
+    btn.disabled = false;
+  }
+});
 $('admDelete').addEventListener('click', async () => {
   if (!current) return;
   const p = current;
@@ -1141,9 +1318,9 @@ $('catBack').addEventListener('click', onBack);
 // ---------- демо-данные (пока SHEET_URL не заполнен) ----------
 const pic = (s, n) => Array.from({ length: n }, (_, i) => `https://picsum.photos/seed/${s}${i}/600/600`).join(', ');
 const DEMO = [
-  { id: 1, category: 'bags', name: 'Сумка кожаная, чёрная', price: '12000', price2: '420', images: pic('bag', 4), description: 'Натуральная кожа.\nРазмер 30×20 см.\n\nВ наличии.' },
+  { id: 1, category: 'bags', name: 'Сумка кожаная, чёрная', price: '12000', price2: '420', images: pic('bag', 4), description: 'Натуральная кожа.\nРазмер 30×20 см.\n\nВ наличии.', sizes: 'S, M, L' },
   { id: 2, category: 'bags', name: 'Шоппер текстильный', price: '4500', price2: '160', images: pic('shop', 2), description: 'Плотный хлопок.' },
-  { id: 3, category: 'accessories', name: 'Ремень с латунной пряжкой', price: '3200', price2: '115', images: pic('belt', 3), description: 'Длина 110 см.' },
+  { id: 3, category: 'accessories', name: 'Ремень с латунной пряжкой', price: '3200', price2: '115', images: pic('belt', 3), description: 'Длина 110 см.', sizes: 'One size', sold: 'да' },
   { id: 4, category: 'accessories', name: 'Кошелёк компактный', price: '2900', price2: '105', images: pic('wal', 1), description: '' },
   { id: 5, category: 'order', name: 'Сумка на заказ — любой цвет', price: '18000', price2: '640', images: pic('ord', 5), description: 'Срок изготовления 2–3 недели.' },
   { id: 6, category: 'bags', name: 'Рюкзак городской с отделением для ноутбука', price: '9800', price2: '350', images: pic('bp', 3), description: 'До 15".' },
