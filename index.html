@@ -511,6 +511,9 @@
 
   /* ===== Счётчики (видит только админ) ===== */
   .adm-stats { flex-basis: 100%; text-align: center; font-size: 13px; color: var(--hint); padding-top: 2px; }
+  .adm-wants { flex-basis: 100%; text-align: center; font-size: 13px; line-height: 1.5; color: var(--text2); }
+  .adm-wants:empty { display: none; }
+  .adm-wants a { color: var(--accent); font-weight: 700; text-decoration: none; }
   .card-stats {
     position: absolute; left: 8px; bottom: 8px; z-index: 2;
     padding: 3px 7px; border-radius: 8px; background: rgba(255, 255, 255, 0.85);
@@ -584,6 +587,7 @@
         <button class="admin-btn danger" id="admDelete">🗑 Удалить</button>
         <button class="admin-btn sold-btn" id="admSold"></button>
         <div class="adm-stats" id="admStats"></div>
+        <div class="adm-wants" id="admWants"></div>
       </div>
       <div class="divider"></div>
       <div class="m-desc" id="mDesc"></div>
@@ -670,6 +674,7 @@
     <div class="cat-hint">Нажмите на кружок, чтобы загрузить логотип (лучше PNG с прозрачным фоном). Стрелками меняется порядок.</div>
     <div id="brandList"></div>
     <button class="cat-add" id="brandAdd">+ Добавить бренд</button>
+    <button class="cat-add" id="brandAuto">✨ Проставить бренды товарам по названиям</button>
     <input type="file" id="brandFile" accept="image/*" hidden>
     <div class="ed-error" id="brandError"></div>
   </div>
@@ -724,6 +729,7 @@ const HEART_SVG = '<svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7
 let products = [];
 let bynRate = null; // BYN за 1 ₽ по курсу НБРБ, приходит из скрипта (только админу)
 let stats = {};     // { id: { views, clicks } } — тоже только админу
+let wants = {};     // { id: [{ userId, username, name }] } — лист ожидания, только админу
 let byId = {};
 let currentCat = 'all';
 let currentSort = 'new';
@@ -891,6 +897,7 @@ function load() {
         if (!d.ok) throw new Error(d.error);
         bynRate = d.rate || null;
         stats = d.stats || {};
+        wants = d.wants || {};
         setCategories(d.categories);
         setBrands(d.brands);
         setProducts(normalize(d.rows));
@@ -920,13 +927,18 @@ function loadCsv() {
 }
 
 // ---------- рендер ----------
+// фото с Google Диска можно попросить уменьшенным: …/d/ID=w600 весит в ~5 раз меньше оригинала
+function sized(url, width) {
+  return /^https:\/\/lh3\.googleusercontent\.com\/d\/[\w-]+$/.test(url) ? `${url}=w${width}` : url;
+}
+
 function heartBtn(id) {
   return `<button class="heart${isFav(id) ? ' active' : ''}" data-id="${esc(id)}" aria-label="В избранное">${HEART_SVG}</button>`;
 }
 
 function cardHTML(p, isNew, multi) {
   const imgs = p.images.slice(0, multi ? 5 : 1);
-  const slides = imgs.map(src => `<img src="${esc(src)}" loading="lazy" alt="" draggable="false">`).join('');
+  const slides = imgs.map(src => `<img src="${esc(sized(src, 600))}" loading="lazy" alt="" draggable="false">`).join('');
   const dots = multi && imgs.length > 1
     ? `<div class="dots">${imgs.map((_, i) => `<span class="dot${i ? '' : ' on'}"></span>`).join('')}</div>`
     : '';
@@ -936,7 +948,10 @@ function cardHTML(p, isNew, multi) {
         <div class="slider">${slides}</div>
         ${p.sold ? '<span class="badge-sold">ПРОДАНО</span>' : isNew ? '<span class="badge">✦ NEW</span>' : ''}
         ${heartBtn(p.id)}
-        ${isAdmin && stats[p.id] ? `<span class="card-stats">👁 ${stats[p.id].views} · 💬 ${stats[p.id].clicks}</span>` : ''}
+        ${isAdmin && (stats[p.id] || wants[p.id]) ? `<span class="card-stats">${[
+          stats[p.id] ? `👁 ${stats[p.id].views} · 💬 ${stats[p.id].clicks}` : '',
+          wants[p.id] ? `💗 ${wants[p.id].length}` : '',
+        ].filter(Boolean).join(' · ')}</span>` : ''}
       </div>
       ${dots}
       <div class="price-row">
@@ -1051,7 +1066,7 @@ function openProduct(id) {
   if (!p) return;
   current = p;
   $('mTrack').innerHTML = p.images.map((src, i) =>
-    `<img src="${esc(src)}" ${i ? 'loading="lazy"' : ''} alt="" draggable="false">`).join('');
+    `<img src="${esc(sized(src, 1200))}" ${i ? 'loading="lazy"' : ''} alt="" draggable="false">`).join('');
   $('mDots').innerHTML = p.images.length > 1
     ? p.images.map((_, i) => `<span class="dot${i ? '' : ' on'}"></span>`).join('') : '';
   $('mHeartSlot').innerHTML = heartBtn(p.id);
@@ -1062,8 +1077,16 @@ function openProduct(id) {
   selectedSize = p.sizes.length === 1 ? p.sizes[0] : null;
   renderProductSizes();
   $('mGallery').classList.toggle('sold', p.sold);
-  $('buyBtn').disabled = p.sold;
-  $('buyBtn').textContent = p.sold ? 'Продано' : '💌 Написать продавцу';
+  // проданное: вместо «Написать» — «Хочу такую же» (лист ожидания)
+  const wanted = isWanted(p.id);
+  $('buyBtn').disabled = p.sold && wanted;
+  $('buyBtn').textContent = p.sold ? (wanted ? '✓ Вы в листе ожидания' : '💗 Хочу такую же') : '💌 Написать продавцу';
+  const w = wants[p.id] || [];
+  $('admWants').innerHTML = w.length
+    ? '💗 Хотят такую же: ' + w.map(u => u.username
+      ? `<a href="https://t.me/${esc(u.username)}">@${esc(u.username)}</a>`
+      : `<a href="tg://user?id=${esc(u.userId)}">${esc(u.name || 'без ника')}</a>`).join(', ')
+    : '';
   $('admSold').textContent = p.sold ? '↩︎ Вернуть в продажу' : '✓ Отметить «Продано»';
   const b = brandOf(p.brand);
   $('mBrand').innerHTML = b ? `${b.logo ? `<img src="${esc(b.logo)}" alt="">` : ''}${esc(b.title)}` : '';
@@ -1136,7 +1159,8 @@ $('mSizes').addEventListener('click', e => {
 });
 
 $('buyBtn').addEventListener('click', () => {
-  if (!current || current.sold) return;
+  if (!current) return;
+  if (current.sold) { wantSame(current); return; }
   if (current.sizes.length > 1 && !selectedSize) {
     try { tg.showAlert('Выберите размер 💗') } catch { toast('Выберите размер') }
     return;
@@ -1144,8 +1168,7 @@ $('buyBtn').addEventListener('click', () => {
   const lines = [`Привет! 💗 Хочу купить: ${current.name}`];
   if (selectedSize) lines.push(`Размер: ${selectedSize}`);
   if (current.price != null) lines.push(`Цена: ${rub(current.price)}` + (current.price2 != null ? ` / ${byn(current.price2)}` : ''));
-  lines.push(`Артикул: ${current.id}`);
-  if (APP_LINK) lines.push(productLink(current));
+  if (APP_LINK) lines.push(productLink(current)); // ссылка открывает миниапп сразу на этой вещи
   track('clicks', current.id);
   const url = `https://t.me/${SELLER_NICK}?text=${encodeURIComponent(lines.join('\n'))}`;
   if (inTelegram) { try { tg.openTelegramLink(url); return; } catch {} }
@@ -1270,7 +1293,7 @@ function closeEditor() {
 function renderPhotos() {
   $('edPhotos').innerHTML = edit.photos.map((ph, i) => `
     <div class="ph${i === 0 ? ' main' : ''}" data-i="${i}">
-      <img src="${esc(ph.url || ph.tmp)}" alt="">
+      <img src="${esc(ph.url ? sized(ph.url, 300) : ph.tmp)}" alt="">
       ${ph.url ? '' : '<div class="ph-spin"><div class="spin"></div></div>'}
       <button class="x" data-act="del" aria-label="Удалить фото">✕</button>
       ${i > 0 ? '<button class="mv" data-act="left" aria-label="Сдвинуть влево">◀</button>' : ''}
@@ -1627,6 +1650,74 @@ $('brandSave').addEventListener('click', async () => {
 });
 
 $('brandBack').addEventListener('click', onBack);
+
+// ---------- админ: бренды товарам по названиям ----------
+// как ещё могут писать бренд в названиях (ключ бренда → варианты)
+const BRAND_ALIASES = {
+  'juicy-couture': ['juicy', 'джуси', 'джуиси'],
+  'playboy': ['play boy', 'плейбой', 'плэйбой'],
+};
+
+function brandWords(b) {
+  const title = b.title.toLowerCase();
+  const first = title.split(/\s+/)[0];
+  return [title, b.key.replace(/-/g, ' '), ...(first.length >= 4 ? [first] : []), ...(BRAND_ALIASES[b.key] || [])];
+}
+
+$('brandAuto').addEventListener('click', async () => {
+  if (!brands.length) { $('brandError').textContent = 'Сначала добавьте бренды и нажмите «Сохранить»'; return; }
+  const map = {}, counts = {};
+  products.filter(p => !p.brand).forEach(p => {
+    const text = `${p.name} ${p.description}`.toLowerCase();
+    const b = brands.find(b => brandWords(b).some(w => text.includes(w)));
+    if (b) { map[p.id] = b.key; counts[b.title] = (counts[b.title] || 0) + 1; }
+  });
+  const found = Object.entries(counts);
+  if (!found.length) { toast('Новых совпадений нет'); return; }
+  const summary = found.map(([t, n]) => `${t} — ${n}`).join(', ');
+  if (!(await askConfirm(`Нашлось: ${summary}. Проставить? Товары, у которых бренд уже указан, не изменятся.`))) return;
+  const btn = $('brandAuto');
+  btn.disabled = true;
+  try {
+    const { count } = await api('assignBrands', { map });
+    products.forEach(p => { if (map[p.id]) p.brand = map[p.id]; });
+    setProducts(products);
+    try { tg.HapticFeedback.notificationOccurred('success') } catch {}
+    toast(`Бренды проставлены: ${count}`);
+  } catch (err) {
+    $('brandError').textContent = err.message;
+  } finally {
+    btn.disabled = false;
+  }
+});
+
+// ---------- «Хочу такую же» для проданных ----------
+function isWanted(id) { try { return localStorage.getItem('want_' + id) === '1' } catch { return false } }
+
+async function wantSame(p) {
+  if (isWanted(p.id)) return;
+  if (!inTelegram) { toast('Откройте магазин в Telegram'); return; }
+  const btn = $('buyBtn');
+  btn.disabled = true;
+  btn.textContent = 'Отправляем…';
+  try {
+    await api('want', { id: p.id });
+    try { localStorage.setItem('want_' + p.id, '1') } catch {}
+    try { tg.HapticFeedback.notificationOccurred('success') } catch {}
+    toast('Готово! Продавец напишет вам 💗');
+  } catch (err) {
+    try { tg.showAlert(err.message) } catch { alert(err.message) }
+  }
+  if (current === p) openProduct(p.id); // обновить кнопку
+}
+
+// ссылки на покупательниц в листе ожидания открываем внутри Telegram
+$('admWants').addEventListener('click', e => {
+  const a = e.target.closest('a');
+  if (!a || !inTelegram || !a.href.startsWith('https://t.me/')) return; // tg://user?id=… открывает сам Telegram
+  e.preventDefault();
+  try { tg.openTelegramLink(a.href) } catch { window.open(a.href, '_blank') }
+});
 
 // ---------- демо-данные (пока SHEET_URL не заполнен) ----------
 const pic = (s, n) => Array.from({ length: n }, (_, i) => `https://picsum.photos/seed/${s}${i}/600/600`).join(', ');
