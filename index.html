@@ -970,8 +970,7 @@ function compareId(a, b) {
 
 function renderHome() {
   let list = products.filter(p =>
-    (searchQuery // при поиске ищем по всем категориям, включая «Под заказ»
-      || (currentCat === 'all' ? p.category !== 'order' : p.category === currentCat.toLowerCase()))
+    (searchQuery || currentCat === 'all' || p.category === currentCat.toLowerCase()) // «Все» и поиск — по всем категориям
     && (!currentBrand || p.brand === currentBrand)
     && matchesSearch(p));
   if (currentSort === 'new') list.sort(compareId);
