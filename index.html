@@ -461,6 +461,61 @@
   }
   .switch-row input:checked + .switch { background: var(--accent); }
   .switch-row input:checked + .switch::after { transform: translateX(18px); }
+
+  /* ===== Поиск ===== */
+  .icon { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; }
+  #searchBtn { flex: 0 0 auto; }
+  #searchBtn.on { background: var(--grad); color: #fff; border-color: transparent; }
+  .search-bar { display: flex; gap: 8px; padding: 10px 10px 0; }
+  .search-bar[hidden] { display: none; }
+  .search-bar .input { flex: 1; min-width: 0; height: 40px; padding: 0 14px; border-radius: 20px; font-size: 16px; }
+  .search-clear {
+    flex: 0 0 auto; width: 40px; height: 40px; border-radius: 50%;
+    background: #fff; border: 1px solid var(--card-line); color: var(--accent);
+  }
+
+  /* ===== Бренды ===== */
+  .brands { display: flex; gap: 8px; overflow-x: auto; padding: 10px 10px 0; }
+  .brands:empty { display: none; }
+  .brand-chip {
+    flex: 0 0 auto; display: flex; align-items: center; gap: 7px;
+    height: 36px; padding: 0 14px 0 4px; border-radius: 18px;
+    background: #fff; border: 1px solid var(--card-line); box-shadow: var(--soft-shadow);
+    color: var(--text); font-size: 13px; font-weight: 600; white-space: nowrap;
+  }
+  .brand-chip.no-logo { padding-left: 14px; }
+  .brand-chip img { width: 28px; height: 28px; border-radius: 50%; object-fit: contain; background: #fff; }
+  .brand-chip.active { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent), var(--glow); }
+  .brand-chip.admin { background: transparent; border: 1.5px dashed var(--accent-soft); color: var(--accent); box-shadow: none; padding-left: 14px; }
+  .m-brand { display: inline-flex; align-items: center; gap: 6px; margin-top: 8px; font-size: 13px; font-weight: 600; color: var(--accent); }
+  .m-brand img { width: 22px; height: 22px; border-radius: 50%; object-fit: contain; background: #fff; }
+  .m-brand:empty { display: none; }
+  .brand-logo-tile {
+    position: relative; flex: 0 0 auto; width: 46px; height: 46px; border-radius: 50%; overflow: hidden;
+    background: #fff; border: 1.5px dashed var(--accent-soft); color: var(--accent); font-size: 18px;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .brand-logo-tile img { width: 100%; height: 100%; object-fit: contain; }
+  .brand-logo-tile.has { border-style: solid; border-color: var(--card-line); }
+
+  /* ===== Поделиться ===== */
+  .share-btn {
+    position: absolute; top: 14px; left: 14px; z-index: 2;
+    width: 34px; height: 34px; border-radius: 50%;
+    background: rgba(255, 255, 255, 0.85); color: var(--accent);
+    display: flex; align-items: center; justify-content: center;
+    box-shadow: var(--soft-shadow);
+  }
+  .share-btn svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2.2; stroke-linecap: round; stroke-linejoin: round; }
+  .share-btn[hidden] { display: none; }
+
+  /* ===== Счётчики (видит только админ) ===== */
+  .adm-stats { flex-basis: 100%; text-align: center; font-size: 13px; color: var(--hint); padding-top: 2px; }
+  .card-stats {
+    position: absolute; left: 8px; bottom: 8px; z-index: 2;
+    padding: 3px 7px; border-radius: 8px; background: rgba(255, 255, 255, 0.85);
+    font-size: 10px; font-weight: 700; color: var(--text2);
+  }
 </style>
 </head>
 <body>
@@ -473,6 +528,9 @@
       <div class="title" id="appTitle"></div>
     </div>
     <div class="filters" id="filters">
+      <button class="sort-btn" id="searchBtn" aria-label="Поиск">
+        <svg class="icon" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+      </button>
       <div class="sort-btn">⇅
         <select id="sort" aria-label="Сортировка">
           <option value="new">Сначала новые</option>
@@ -481,6 +539,11 @@
         </select>
       </div>
     </div>
+    <div class="search-bar" id="searchBar" hidden>
+      <input class="input" id="searchInput" type="search" placeholder="Поиск: название или бренд" autocomplete="off" enterkeyhint="search">
+      <button class="search-clear" id="searchClear" aria-label="Закрыть поиск">✕</button>
+    </div>
+    <div class="brands" id="brandRow"></div>
   </header>
   <div class="grid" id="homeGrid"><div class="loading">Загрузка…</div></div>
 </div>
@@ -504,10 +567,14 @@
       <div class="track" id="mTrack"></div>
       <div class="dots" id="mDots"></div>
       <div id="mHeartSlot"></div>
+      <button class="share-btn" id="shareBtn" aria-label="Поделиться">
+        <svg viewBox="0 0 24 24"><path d="M12 15V3m0 0L7.5 7.5M12 3l4.5 4.5"/><path d="M5 12v7a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2v-7"/></svg>
+      </button>
     </div>
     <div class="info">
       <div class="m-price-row"><span class="m-price" id="mPrice"></span><span class="m-price2" id="mPrice2"></span></div>
       <div class="m-name" id="mName"></div>
+      <div class="m-brand" id="mBrand"></div>
       <div class="sizes-block" id="mSizesBlock">
         <div class="sizes-label">Размер</div>
         <div class="size-chips" id="mSizes"></div>
@@ -516,6 +583,7 @@
         <button class="admin-btn" id="admEdit">✏️ Изменить</button>
         <button class="admin-btn danger" id="admDelete">🗑 Удалить</button>
         <button class="admin-btn sold-btn" id="admSold"></button>
+        <div class="adm-stats" id="admStats"></div>
       </div>
       <div class="divider"></div>
       <div class="m-desc" id="mDesc"></div>
@@ -557,7 +625,10 @@
       <input type="file" id="edFile" accept="image/*" multiple hidden>
     </div>
     <div class="field"><label for="edName">Название</label><input class="input" id="edName" autocomplete="off"></div>
-    <div class="field"><label for="edCat">Категория</label><select class="input" id="edCat"></select></div>
+    <div class="field-row">
+      <div class="field"><label for="edCat">Категория</label><select class="input" id="edCat"></select></div>
+      <div class="field"><label for="edBrand">Бренд</label><select class="input" id="edBrand"></select></div>
+    </div>
     <div class="field-row">
       <div class="field"><label for="edPrice">Цена, ₽</label><input class="input" id="edPrice" inputmode="numeric" autocomplete="off"></div>
       <div class="field"><label for="edPrice2">Цена, BYN</label><input class="input" id="edPrice2" inputmode="decimal" autocomplete="off"></div>
@@ -591,6 +662,20 @@
   <div class="buy-bar"><button class="buy-btn" id="catSave">Сохранить</button></div>
 </div>
 
+<!-- Админ: бренды -->
+<div id="brandEditor" class="editor">
+  <button class="web-back" id="brandBack" aria-label="Назад">‹</button>
+  <div class="scroll-container" id="brandScroll">
+    <div class="ed-title">Бренды</div>
+    <div class="cat-hint">Нажмите на кружок, чтобы загрузить логотип (лучше PNG с прозрачным фоном). Стрелками меняется порядок.</div>
+    <div id="brandList"></div>
+    <button class="cat-add" id="brandAdd">+ Добавить бренд</button>
+    <input type="file" id="brandFile" accept="image/*" hidden>
+    <div class="ed-error" id="brandError"></div>
+  </div>
+  <div class="buy-bar"><button class="buy-btn" id="brandSave">Сохранить</button></div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
@@ -599,6 +684,7 @@ const SHEET_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vRTEC2-KEuwSK
 const SELLER_NICK = 'hulagyp'; // ник продавца в Telegram без @
 const LOGO_URL = '';       // если пусто — логотип скрыт
 const APP_TITLE = 'candy glam shop💗';   // название в шапке
+const APP_LINK = 'https://t.me/candyglamclub_bot/shop';       // ссылка на миниапп из @BotFather: https://t.me/ИМЯ_БОТА/ИМЯ_АППА (для «Поделиться»)
 
 // Админ-режим (если API_URL пусто — выключен)
 const API_URL = 'https://script.google.com/macros/s/AKfycbwUy_39N46GTi01dZco8QTNnSjKsNfbnnPrHCNHbzvJ116sRlz-3XgcPZ6goIWLQEQ/exec'; // ссылка на веб-приложение Apps Script (…/exec)
@@ -637,6 +723,7 @@ const HEART_SVG = '<svg viewBox="0 0 24 24"><path d="M20.84 4.61a5.5 5.5 0 0 0-7
 
 let products = [];
 let bynRate = null; // BYN за 1 ₽ по курсу НБРБ, приходит из скрипта (только админу)
+let stats = {};     // { id: { views, clicks } } — тоже только админу
 let byId = {};
 let currentCat = 'all';
 let currentSort = 'new';
@@ -652,7 +739,7 @@ function num(v) {
 }
 const fmt = n => n.toLocaleString('ru-RU');
 const rub = n => n == null ? '' : fmt(n) + ' ₽';
-const byn = n => n == null ? '' : fmt(n) + ' BYN';
+const byn = n => n == null ? '' : fmt(Math.ceil(n - 1e-9)) + ' BYN'; // без копеек, округляем вверх
 
 function isFav(id) { try { return localStorage.getItem('fav_' + id) === '1' } catch { return false } }
 function setFav(id, on) { try { on ? localStorage.setItem('fav_' + id, '1') : localStorage.removeItem('fav_' + id) } catch {} }
@@ -706,6 +793,67 @@ $('filters').addEventListener('click', e => {
 });
 $('sort').addEventListener('change', e => { currentSort = e.target.value; renderHome(); });
 
+// ---------- бренды ----------
+let brands = [];
+let currentBrand = null;
+try {
+  const cached = JSON.parse(localStorage.getItem('brands'));
+  if (Array.isArray(cached)) brands = cached;
+} catch {}
+
+const brandOf = key => brands.find(b => b.key === key);
+
+function renderBrands() {
+  if (currentBrand && !brandOf(currentBrand)) currentBrand = null;
+  $('brandRow').innerHTML = brands.map(b => `
+    <button class="brand-chip${b.logo ? '' : ' no-logo'}${b.key === currentBrand ? ' active' : ''}" data-brand="${esc(b.key)}">
+      ${b.logo ? `<img src="${esc(b.logo)}" alt="">` : ''}${esc(b.title)}
+    </button>`).join('') + (isAdmin ? '<button class="brand-chip admin" id="brandEditBtn">⚙︎ Бренды</button>' : '');
+}
+
+function setBrands(list) {
+  if (!Array.isArray(list)) return;
+  brands = list;
+  try { localStorage.setItem('brands', JSON.stringify(list)); } catch {}
+  renderBrands();
+  renderHome();
+}
+
+renderBrands();
+$('brandRow').addEventListener('click', e => {
+  const chip = e.target.closest('.brand-chip');
+  if (!chip) return;
+  if (chip.id === 'brandEditBtn') { openBrandEditor(); return; }
+  currentBrand = currentBrand === chip.dataset.brand ? null : chip.dataset.brand; // повторное нажатие снимает фильтр
+  renderBrands();
+  renderHome();
+  try { tg.HapticFeedback.selectionChanged() } catch {}
+});
+
+// ---------- поиск ----------
+let searchQuery = '';
+
+$('searchBtn').addEventListener('click', () => {
+  const open = $('searchBar').hidden;
+  $('searchBar').hidden = !open;
+  $('searchBtn').classList.toggle('on', open);
+  if (open) $('searchInput').focus();
+  else { $('searchInput').value = ''; searchQuery = ''; renderHome(); }
+});
+$('searchInput').addEventListener('input', () => {
+  searchQuery = $('searchInput').value.trim().toLowerCase();
+  renderHome();
+});
+$('searchInput').addEventListener('keydown', e => { if (e.key === 'Enter') $('searchInput').blur(); });
+$('searchClear').addEventListener('click', () => $('searchBtn').click());
+
+function matchesSearch(p) {
+  if (!searchQuery) return true;
+  const b = brandOf(p.brand);
+  const hay = [p.name, p.description, b ? b.title : p.brand, p.id].join(' ').toLowerCase();
+  return searchQuery.split(/\s+/).every(word => hay.includes(word));
+}
+
 // ---------- данные ----------
 function normalize(rows) {
   return rows.map(r => {
@@ -721,6 +869,7 @@ function normalize(rows) {
       description: String(r.description ?? '').trim(),
       sizes: String(r.sizes ?? '').split(',').map(s => s.trim()).filter(Boolean),
       sold: /^(1|\+|да|yes|true|sold|продано)$/i.test(String(r.sold ?? '').trim()),
+      brand: String(r.brand ?? '').trim().toLowerCase(),
     };
   }).filter(Boolean);
 }
@@ -730,6 +879,7 @@ function setProducts(list) {
   byId = Object.fromEntries(list.map(p => [p.id, p]));
   renderHome();
   renderFavs();
+  if (startParam) openFromStartParam();
 }
 
 function load() {
@@ -740,7 +890,9 @@ function load() {
       .then(d => {
         if (!d.ok) throw new Error(d.error);
         bynRate = d.rate || null;
+        stats = d.stats || {};
         setCategories(d.categories);
+        setBrands(d.brands);
         setProducts(normalize(d.rows));
       })
       .catch(loadCsv);
@@ -749,7 +901,7 @@ function load() {
   if (API_URL) {
     fetch(API_URL + '?part=categories')
       .then(r => r.json())
-      .then(d => { if (d.ok) setCategories(d.categories); })
+      .then(d => { if (d.ok) { setCategories(d.categories); setBrands(d.brands); } })
       .catch(() => {}); // нет связи со скриптом — остаются категории из кэша или по умолчанию
   }
   loadCsv();
@@ -784,6 +936,7 @@ function cardHTML(p, isNew, multi) {
         <div class="slider">${slides}</div>
         ${p.sold ? '<span class="badge-sold">ПРОДАНО</span>' : isNew ? '<span class="badge">✦ NEW</span>' : ''}
         ${heartBtn(p.id)}
+        ${isAdmin && stats[p.id] ? `<span class="card-stats">👁 ${stats[p.id].views} · 💬 ${stats[p.id].clicks}</span>` : ''}
       </div>
       ${dots}
       <div class="price-row">
@@ -802,14 +955,17 @@ function compareId(a, b) {
 
 function renderHome() {
   let list = products.filter(p =>
-    currentCat === 'all' ? p.category !== 'order' : p.category === currentCat.toLowerCase());
+    (searchQuery // при поиске ищем по всем категориям, включая «Под заказ»
+      || (currentCat === 'all' ? p.category !== 'order' : p.category === currentCat.toLowerCase()))
+    && (!currentBrand || p.brand === currentBrand)
+    && matchesSearch(p));
   if (currentSort === 'new') list.sort(compareId);
   if (currentSort === 'cheap') list.sort((a, b) => (a.price ?? Infinity) - (b.price ?? Infinity));
   if (currentSort === 'expensive') list.sort((a, b) => (b.price ?? -Infinity) - (a.price ?? -Infinity));
   list = [...list.filter(p => !p.sold), ...list.filter(p => p.sold)]; // проданное — в конец
   $('homeGrid').innerHTML = list.length
     ? list.map((p, i) => cardHTML(p, currentSort === 'new' && i < 3, true)).join('')
-    : '<div class="empty">Нет товаров</div>';
+    : `<div class="empty">${searchQuery || currentBrand ? 'Ничего не нашлось 🔍' : 'Нет товаров'}</div>`;
 }
 
 function renderFavs() {
@@ -909,6 +1065,12 @@ function openProduct(id) {
   $('buyBtn').disabled = p.sold;
   $('buyBtn').textContent = p.sold ? 'Продано' : '💌 Написать продавцу';
   $('admSold').textContent = p.sold ? '↩︎ Вернуть в продажу' : '✓ Отметить «Продано»';
+  const b = brandOf(p.brand);
+  $('mBrand').innerHTML = b ? `${b.logo ? `<img src="${esc(b.logo)}" alt="">` : ''}${esc(b.title)}` : '';
+  const st = stats[p.id] || { views: 0, clicks: 0 };
+  $('admStats').textContent = `👁 ${st.views} просмотров · 💬 ${st.clicks} нажали «Написать»`;
+  $('shareBtn').hidden = !APP_LINK;
+  track('views', p.id);
   mSwipe.go(0, false);
   $('modalScroll').scrollTop = 0;
   $('modal').classList.add('open');
@@ -921,6 +1083,41 @@ function closeProduct() {
 }
 
 let selectedSize = null;
+
+// ---------- ссылка на товар и «Поделиться» ----------
+// t.me/бот/апп?startapp=p7 — миниапп откроется сразу на товаре 7
+const productLink = p => `${APP_LINK}?startapp=p${encodeURIComponent(p.id)}`;
+
+$('shareBtn').addEventListener('click', () => {
+  if (!current || !APP_LINK) return;
+  const link = productLink(current);
+  const text = `${current.name} — ${rub(current.price)}${current.price2 != null ? ' / ' + byn(current.price2) : ''} 💗`;
+  const shareUrl = `https://t.me/share/url?url=${encodeURIComponent(link)}&text=${encodeURIComponent(text)}`;
+  if (inTelegram) { try { tg.openTelegramLink(shareUrl); return; } catch {} }
+  if (navigator.share) { navigator.share({ title: current.name, text, url: link }).catch(() => {}); return; }
+  try { navigator.clipboard.writeText(link); toast('Ссылка скопирована'); } catch { window.open(shareUrl, '_blank'); }
+});
+
+// открытие по ссылке на товар — один раз, когда товары загрузятся
+let startParam = (tg && tg.initDataUnsafe && tg.initDataUnsafe.start_param) || new URLSearchParams(location.search).get('tgWebAppStartParam') || '';
+function openFromStartParam() {
+  const m = /^p(.+)$/.exec(startParam);
+  if (m && byId[decodeURIComponent(m[1])]) {
+    startParam = '';
+    openProduct(decodeURIComponent(m[1]));
+  }
+}
+
+// ---------- счётчики: просмотр и «Написать продавцу» (один раз за сессию на товар) ----------
+function track(kind, id) {
+  if (!API_URL || isAdmin) return; // свои просмотры не считаем
+  const key = `t_${kind}_${id}`;
+  try {
+    if (sessionStorage.getItem(key)) return;
+    sessionStorage.setItem(key, '1');
+  } catch {}
+  fetch(API_URL, { method: 'POST', body: JSON.stringify({ action: 'track', kind, id }), keepalive: true }).catch(() => {});
+}
 
 function renderProductSizes() {
   const sizes = current.sizes;
@@ -948,6 +1145,8 @@ $('buyBtn').addEventListener('click', () => {
   if (selectedSize) lines.push(`Размер: ${selectedSize}`);
   if (current.price != null) lines.push(`Цена: ${rub(current.price)}` + (current.price2 != null ? ` / ${byn(current.price2)}` : ''));
   lines.push(`Артикул: ${current.id}`);
+  if (APP_LINK) lines.push(productLink(current));
+  track('clicks', current.id);
   const url = `https://t.me/${SELLER_NICK}?text=${encodeURIComponent(lines.join('\n'))}`;
   if (inTelegram) { try { tg.openTelegramLink(url); return; } catch {} }
   window.open(url, '_blank');
@@ -968,6 +1167,7 @@ $('lbClose').addEventListener('click', closeLightbox);
 function onBack() {
   if ($('lightbox').classList.contains('open')) closeLightbox();
   else if ($('catEditor').classList.contains('open')) closeCatEditor();
+  else if ($('brandEditor').classList.contains('open')) closeBrandEditor();
   else if ($('editor').classList.contains('open')) closeEditor();
   else if ($('modal').classList.contains('open')) closeProduct();
 }
@@ -1048,6 +1248,12 @@ function openEditor(p) {
   if (cat && !cats.some(c => c.key === cat)) cats.push({ key: cat, title: cat });
   $('edCat').innerHTML = cats.map(c => `<option value="${esc(c.key)}">${esc(c.title)}</option>`).join('');
   $('edCat').value = cat;
+  const brandList = brands.slice();
+  const brand = p ? p.brand : (currentBrand || '');
+  if (brand && !brandOf(brand)) brandList.push({ key: brand, title: brand });
+  $('edBrand').innerHTML = '<option value="">— без бренда —</option>' +
+    brandList.map(b => `<option value="${esc(b.key)}">${esc(b.title)}</option>`).join('');
+  $('edBrand').value = brand;
   $('edError').textContent = '';
   renderPhotos();
   $('edScroll').scrollTop = 0;
@@ -1152,7 +1358,7 @@ async function saveProduct(payload) {
 
 const payloadOf = p => ({
   id: p.id, name: p.name, category: p.category, price: p.price ?? '', price2: p.price2 ?? '',
-  images: p.images.join(', '), description: p.description, sizes: p.sizes.join(', '), sold: p.sold,
+  images: p.images.join(', '), description: p.description, sizes: p.sizes.join(', '), sold: p.sold, brand: p.brand,
 });
 
 $('edSave').addEventListener('click', async () => {
@@ -1169,6 +1375,7 @@ $('edSave').addEventListener('click', async () => {
       id: edit.id,
       name,
       category: $('edCat').value,
+      brand: $('edBrand').value,
       price: $('edPrice').value,
       price2: $('edPrice2').value,
       images: edit.photos.map(ph => ph.url).join(', '),
@@ -1314,6 +1521,112 @@ $('catSave').addEventListener('click', async () => {
 });
 
 $('catBack').addEventListener('click', onBack);
+
+// ---------- админ: бренды ----------
+let brandDraft = [];      // [{ key, title, logo, uploading? }]
+let logoTarget = null;    // строка, для которой выбирают логотип
+
+const brandCount = key => key ? products.filter(p => p.brand === key).length : 0;
+
+function renderBrandList() {
+  $('brandList').innerHTML = brandDraft.map((b, i) => `
+    <div class="cat-row" data-i="${i}">
+      <button class="brand-logo-tile${b.logo ? ' has' : ''}" data-act="logo" aria-label="Логотип">
+        ${b.uploading ? '<div class="spin"></div>' : b.logo ? `<img src="${esc(b.logo)}" alt="">` : '＋'}
+      </button>
+      <input class="input" value="${esc(b.title)}" placeholder="Название бренда" maxlength="40">
+      <button class="cat-btn" data-act="up" aria-label="Выше" ${i === 0 ? 'disabled' : ''}>↑</button>
+      <button class="cat-btn" data-act="down" aria-label="Ниже" ${i === brandDraft.length - 1 ? 'disabled' : ''}>↓</button>
+      <button class="cat-btn" data-act="del" aria-label="Удалить">✕</button>
+    </div>`).join('');
+}
+
+function openBrandEditor() {
+  brandDraft = brands.map(b => ({ ...b }));
+  $('brandError').textContent = '';
+  renderBrandList();
+  $('brandScroll').scrollTop = 0;
+  $('brandEditor').classList.add('open');
+  try { tg.BackButton.show() } catch {}
+}
+
+function closeBrandEditor() {
+  $('brandEditor').classList.remove('open');
+  document.activeElement && document.activeElement.blur();
+  if (!$('modal').classList.contains('open')) { try { tg.BackButton.hide() } catch {} }
+}
+
+$('brandList').addEventListener('input', e => {
+  const row = e.target.closest('.cat-row');
+  if (row) brandDraft[Number(row.dataset.i)].title = e.target.value;
+});
+
+$('brandList').addEventListener('click', async e => {
+  const btn = e.target.closest('[data-act]');
+  if (!btn) return;
+  const i = Number(btn.closest('.cat-row').dataset.i);
+  const act = btn.dataset.act;
+  if (act === 'logo') { logoTarget = brandDraft[i]; $('brandFile').click(); return; }
+  if (act === 'up') [brandDraft[i - 1], brandDraft[i]] = [brandDraft[i], brandDraft[i - 1]];
+  if (act === 'down') [brandDraft[i + 1], brandDraft[i]] = [brandDraft[i], brandDraft[i + 1]];
+  if (act === 'del') {
+    const b = brandDraft[i], n = brandCount(b.key);
+    if (n && !(await askConfirm(`У бренда «${b.title}» ${n} товар(ов). Они останутся в каталоге, но без бренда. Удалить?`))) return;
+    brandDraft.splice(i, 1);
+  }
+  renderBrandList();
+});
+
+$('brandFile').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  const row = logoTarget;
+  if (!file || !row) return;
+  row.uploading = true;
+  renderBrandList();
+  try {
+    const { url } = await api('upload', { data: await resizeToBase64(file, 400, 0.9), name: 'logo-' + file.name });
+    row.logo = url;
+  } catch (err) {
+    $('brandError').textContent = 'Не удалось загрузить логотип: ' + err.message;
+  }
+  row.uploading = false;
+  renderBrandList();
+});
+
+$('brandAdd').addEventListener('click', () => {
+  brandDraft.push({ key: '', title: '', logo: '' });
+  renderBrandList();
+  const inputs = $('brandList').querySelectorAll('.input');
+  inputs[inputs.length - 1].focus();
+});
+
+$('brandSave').addEventListener('click', async () => {
+  if (brandDraft.some(b => b.uploading)) { $('brandError').textContent = 'Дождитесь загрузки логотипа'; return; }
+  const list = brandDraft.map(b => ({ key: b.key, title: b.title.trim(), logo: b.logo || '' }));
+  if (list.some(b => !b.title)) { $('brandError').textContent = 'Заполните названия или удалите пустые строки'; return; }
+  const taken = list.map(b => b.key).filter(Boolean);
+  list.forEach(b => { if (!b.key) { b.key = makeKey(b.title, taken); taken.push(b.key); } });
+
+  const btn = $('brandSave');
+  btn.disabled = true;
+  btn.textContent = 'Сохранение…';
+  $('brandError').textContent = '';
+  try {
+    const { brands: saved } = await api('saveBrands', { brands: list });
+    setBrands(saved);
+    closeBrandEditor();
+    try { tg.HapticFeedback.notificationOccurred('success') } catch {}
+    toast('Бренды сохранены');
+  } catch (err) {
+    $('brandError').textContent = err.message;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Сохранить';
+  }
+});
+
+$('brandBack').addEventListener('click', onBack);
 
 // ---------- демо-данные (пока SHEET_URL не заполнен) ----------
 const pic = (s, n) => Array.from({ length: n }, (_, i) => `https://picsum.photos/seed/${s}${i}/600/600`).join(', ');
